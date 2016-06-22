@@ -72,26 +72,62 @@ namespace EFTests
                 {
                     // intentionally leave title blank
                     var article = new Article() { id = Guid.NewGuid(), blog = blog, title = "Article Title" };
+                    _context.Add(article);
                     _context.SaveChanges();
                 }
+                TestNullColumn(_context);
+                TestShouldHaveLike(_context);
 
-                string search = "Name";
-                // Expect this query to have a WHERE ... LIKE, clause: it does.
-                QueryShouldHaveLIKE(_context.articles.Include(e => e.blog)
-                        .Where(e => e.title.Contains(search) || e.subtitle.Contains(search)));
-
-                // Expect this query to have a WHERE ... LIKE, clause: it does NOT.
-                QueryShouldHaveLIKE(_context.articles.Include(e => e.blog)
-                        .Where(e => e.blog.name.Contains(search)));
-
-                // Expect this query to have a WHERE ... =, clause: it does NOT.
-                QueryShouldHaveLIKE(_context.articles.Include(e => e.blog)
-                        .Where(e => e.blog.name == search));
-
-                // Expect this query to have a WHERE ... LIKE clause: it does NOT.
-                QueryShouldHaveLIKE(_context.articles.Include(e => e.blog)
-                        .Where(e => e.title.Contains(search) || e.subtitle.Contains(search) || e.blog.name.Contains(search)));
+                return;
             }
+        }
+
+        public static void TestNullColumn(ApplicationContext _context)
+        {
+            // This test failing depends on the broken behavior of searching across a navigation property (illustrated in TestShouldHAveLike(), below)
+            var q = _context.articles.Include(e => e.blog);
+
+            // This will find the one entry. (query executes on Sql Server, using Case Insensitive string.Contains)
+            var n = q.Where(e => e.title.Contains("title")).ToList().Count();
+            Console.WriteLine($"found {n} entries (Should be 1)");
+
+            // This will NOT find the one entry. (Because using the navigation property causes the query to execute locally, with Case sensitive 'string.Contains'
+            n = q.Where(e => e.title.Contains("title") || e.blog.name == "will not match").ToList().Count();
+            Console.WriteLine($"found {n} entries (Should be 1)");
+
+            // this query will find no matches (because there are none), but since query is run on Server, it will not crash comparing the null, either.
+            n = q.Where(e => e.subtitle.Contains("will not match")).ToList().Count();
+            Console.WriteLine($"found {n} entries (Should be 0)");
+
+            // this query will find no matches (because there are none), but since query is run on Server, it will not crash comparing the null, either.
+            try
+            {
+                n = q.Where(e => e.subtitle.Contains("will not match") || e.blog.name == "will not match").ToList().Count();
+                Console.WriteLine($"found {n} entries (Should be 0)");
+            } catch (NullReferenceException e) {
+                Console.WriteLine("Caught null ref exception!");
+            }
+
+        }
+
+        public static void TestShouldHaveLike(ApplicationContext _context)
+        {
+            string search = "Name";
+            // Expect this query to have a WHERE ... LIKE, clause: it does.
+            QueryShouldHaveLIKE(_context.articles.Include(e => e.blog)
+                    .Where(e => e.title.Contains(search) || e.subtitle.Contains(search)));
+
+            // Expect this query to have a WHERE ... LIKE, clause: it does NOT.
+            QueryShouldHaveLIKE(_context.articles.Include(e => e.blog)
+                    .Where(e => e.blog.name.Contains(search)));
+
+            // Expect this query to have a WHERE ... =, clause: it does NOT.
+            QueryShouldHaveLIKE(_context.articles.Include(e => e.blog)
+                    .Where(e => e.blog.name == search));
+
+            // Expect this query to have a WHERE ... LIKE clause: it does NOT.
+            QueryShouldHaveLIKE(_context.articles.Include(e => e.blog)
+                    .Where(e => e.title.Contains(search) || e.subtitle.Contains(search) || e.blog.name.Contains(search)));
         }
 
         public class MyLoggerProvider : ILoggerProvider
